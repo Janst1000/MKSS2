@@ -35,9 +35,20 @@ class RobotStatus(Resource):
     def get(self, robot_id):
         robot = robots.get(robot_id)
         if robot:
-            robot["actions"].append({"action": "status", "timestamp": datetime.now().isoformat()})
             robots[robot_id] = robot
-            return jsonify(robot)
+            response = jsonify(
+                {
+                    "id": robot["id"],
+                    "position": robot["position"],
+                    "energy": robot["energy"],
+                    "inventory": robot["inventory"],
+                    "links": [
+                        {"rel": "self", "href": f"/robots/{robot_id}/status"},
+                        {"rel": "actions", "href": f"/robots/{robot_id}/actions?page=1&size=5"}
+                    ]
+                }
+            )
+            return response
         return {"message": "Robot not found"}, 404
 
 # Roboter bewegen
@@ -62,9 +73,34 @@ class RobotMove(Resource):
         else:
             return {"message": "Invalid direction"}, 400
 
+        current_actions_idx = len(robot["actions"])
+        robot["actions"].append(
+                {
+                "action": "move",
+                "direction": direction,
+                "timestamp": datetime.now().isoformat(),
+                "links": [
+                    {"rel": "self", "href": f"/robots/{robot_id}/actions/{current_actions_idx}"},
+                    ]
+                }
+            )
+        
+        # Updating the robot in the robots dictionary
         robots[robot_id] = robot
-        robot["actions"].append({"action": "move", "direction": direction, "timestamp": datetime.now().isoformat()})
-        return jsonify(robot)
+        
+        response = jsonify(
+            {
+                "id": robot["id"],
+                "position": robot["position"],
+                "energy": robot["energy"],
+                "inventory": robot["inventory"],
+                "links": [
+                    {"rel": "self", "href": f"/robots/{robot_id}/status"},
+                    {"rel": "actions", "href": f"/robots/{robot_id}/actions?page=1&size=5"}
+                ]
+            }
+        )
+        return response
 
 # Roboter-Zustand aktualisieren
 class RobotState(Resource):
@@ -81,9 +117,28 @@ class RobotState(Resource):
         if "position" in data:
             robot["position"] = data["position"]
 
+        current_actions_idx = len(robot["actions"])
+        robot["actions"].append({
+            "action": "update_state",
+            "data": data, "timestamp": datetime.now().isoformat(),
+            "links": [
+                    {"rel": "self", "href": f"/robots/{robot_id}/actions/{current_actions_idx}"},
+                    ]
+            })
         robots[robot_id] = robot
-        robot["actions"].append({"action": "update_state", "data": data, "timestamp": datetime.now().isoformat()})
-        return jsonify(robot)
+        response = jsonify(
+                {
+                    "id": robot["id"],
+                    "position": robot["position"],
+                    "energy": robot["energy"],
+                    "inventory": robot["inventory"],
+                    "links": [
+                        {"rel": "self", "href": f"/robots/{robot_id}/status"},
+                        {"rel": "actions", "href": f"/robots/{robot_id}/actions?page=1&size=5"}
+                    ]
+                }
+            )
+        return response
     
 # Roboter-Item aufheben
 class RobotPickup(Resource):
@@ -98,12 +153,31 @@ class RobotPickup(Resource):
 
         robot_pos = robot["position"]
         item_pos = item["position"]
+        current_actions_idx = len(robot["actions"])
         if abs(robot_pos["x"] - item_pos["x"]) == 0 and abs(robot_pos["y"] - item_pos["y"]) == 0:
             robot["inventory"][item_id] = item
             items.pop(item_id)
-            robot["actions"].append({"action": "pickup", "item": item, "timestamp": datetime.now().isoformat()})
+            robot["actions"].append({
+                "action": "pickup",
+                "item": item, "timestamp": datetime.now().isoformat(),
+                "links": [
+                    {"rel": "self", "href": f"/robots/{robot_id}/actions/{current_actions_idx}"},
+                    ]
+                })
             robots[robot_id] = robot
-            return jsonify(robot)    
+            response = jsonify(
+                {
+                    "id": robot["id"],
+                    "position": robot["position"],
+                    "energy": robot["energy"],
+                    "inventory": robot["inventory"],
+                    "links": [
+                        {"rel": "self", "href": f"/robots/{robot_id}/status"},
+                        {"rel": "actions", "href": f"/robots/{robot_id}/actions?page=1&size=5"}
+                    ]
+                }
+            )
+            return response  
         else:    
             return {"message": "Item not in range"}, 400
     
@@ -120,17 +194,89 @@ class RobotPutDown(Resource):
             robot["inventory"].pop(item_id)
             item['position'] = robot['position'].copy()
             items[item_id] = item
-            robot["actions"].append({"action": "drop", "item": item, "timestamp": datetime.now().isoformat()})
+            current_actions_idx = len(robot["actions"])
+            robot["actions"].append({
+                "action": "drop",
+                "item": item,
+                "timestamp": datetime.now().isoformat(),
+                "links": [
+                    {"rel": "self", "href": f"/robots/{robot_id}/actions/{current_actions_idx}"},
+                    ]
+                })
             robots[robot_id] = robot
-            return jsonify(robot)        
+            response = jsonify(
+                {
+                    "id": robot["id"],
+                    "position": robot["position"],
+                    "energy": robot["energy"],
+                    "inventory": robot["inventory"],
+                    "links": [
+                        {"rel": "self", "href": f"/robots/{robot_id}/status"},
+                        {"rel": "actions", "href": f"/robots/{robot_id}/actions?page=1&size=5"}
+                    ]
+                }
+            )
+            return response        
         return {"message": "Item not in range"}, 400
     
 class RobotGetActions(Resource):
-    def get(self, robot_id):
+    def get(self, robot_id, action_id=None):
         robot = robots.get(robot_id)
-        if robot:
-            return jsonify(robot["actions"])
-        return {"message": "Robot not found"}, 404
+        if not robot:
+            return {"message": "Robot not found"}, 404
+
+        # If action_id is provided, return only that action
+        if action_id is not None:
+            if action_id < 0 or action_id >= len(robot["actions"]):
+                return {"message": "Action not found"}, 404
+            action = robot["actions"][action_id]
+            # Add HATEOAS link to the specific action
+            action_with_link = {
+                "action": action,
+                "links": [
+                    {"rel": "self", "href": f"/robots/{robot_id}/actions/{action_id}"}
+                ]
+            }
+            return jsonify(action_with_link)
+
+        # Handle pagination if no specific action_id is requested
+        page = int(request.args.get('page', 1))
+        size = int(request.args.get('size', 5))
+        actions = robot["actions"]
+
+        start = (page - 1) * size
+        end = start + size
+        paginated_actions = actions[start:end]
+
+        # Calculate total number of pages
+        total_elements = len(actions)
+        total_pages = (total_elements + size - 1) // size
+        has_next = page < total_pages
+        has_previous = page > 1
+
+        # Add pagination links
+        links = [
+            {"rel": "self", "href": f"/robots/{robot_id}/actions?page={page}&size={size}"},
+            {"rel": "next", "href": f"/robots/{robot_id}/actions?page={page+1}&size={size}"} if has_next else None,
+            {"rel": "prev", "href": f"/robots/{robot_id}/actions?page={page-1}&size={size}"} if has_previous else None
+        ]
+        links = [link for link in links if link]  # Remove None values
+
+        # Format response with pagination and links
+        response = {
+            "page": {
+                "number": page,
+                "size": size,
+                "totalElements": total_elements,
+                "totalPages": total_pages,
+                "hasNext": has_next,
+                "hasPrevious": has_previous
+            },
+            "actions": paginated_actions,
+            "links": links
+        }
+
+        return jsonify(response)
     
 class RobotAttack(Resource):
     def post(self, robot_id, target_id):
@@ -144,9 +290,29 @@ class RobotAttack(Resource):
             return {"message": "Not enough energy"}, 400
         elif abs(robot["position"]["x"] - target["position"]["x"]) <= 1 and abs(robot["position"]["y"] - target["position"]["y"]) <= 1:
             robot["energy"] -= 5
-            robot["actions"].append({"action": "attack", "target": target_id, "timestamp": datetime.now().isoformat()})
+            current_actions_idx = len(robot["actions"])
+            robot["actions"].append({
+                "action": "attack",
+                "target": target_id,
+                "timestamp": datetime.now().isoformat(),
+                "links": [
+                        {"rel": "self", "href": f"/robots/{robot_id}/actions/{current_actions_idx}"},
+                        ]
+                })
             robots[robot_id] = robot
-            return jsonify(robot)
+            response = jsonify(
+                {
+                    "id": robot["id"],
+                    "position": robot["position"],
+                    "energy": robot["energy"],
+                    "inventory": robot["inventory"],
+                    "links": [
+                        {"rel": "self", "href": f"/robots/{robot_id}/status"},
+                        {"rel": "actions", "href": f"/robots/{robot_id}/actions?page=1&size=5"}
+                    ]
+                }
+            )
+            return response
 
 # Endpunkte registrieren
 api.add_resource(RobotStatus, '/robots/<int:robot_id>/status')
@@ -154,7 +320,7 @@ api.add_resource(RobotMove, '/robots/<int:robot_id>/move')
 api.add_resource(RobotState, '/robots/<int:robot_id>/state')
 api.add_resource(RobotPickup, '/robots/<int:robot_id>/pickup/<int:item_id>')
 api.add_resource(RobotPutDown, '/robots/<int:robot_id>/putdown/<int:item_id>')
-api.add_resource(RobotGetActions, '/robots/<int:robot_id>/actions')
+api.add_resource(RobotGetActions, '/robots/<int:robot_id>/actions', '/robots/<int:robot_id>/actions/<int:action_id>')
 api.add_resource(RobotAttack, '/robots/<int:robot_id>/attack/<int:target_id>')
 
 if __name__ == '__main__':
