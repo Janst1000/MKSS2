@@ -46,11 +46,11 @@ class RobotApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         
         data = response.get_json()
-        self.assertNotIn(1, data["inventory"])  # Check that item 1 is no longer in inventory
+        self.assertNotIn("1", data["inventory"])  # Check that item 1 is no longer in inventory
 
     def test_post_robot_attack(self):
         # Move robot 2 to be near robot 1 for attack
-        self.app.post('/robots/2/move', json={"direction": "left"})  # Assuming this brings it closer
+        self.app.post('/robots/2/move', json={"direction": "left"})
         
         # Attack robot 2 from robot 1
         response = self.app.post('/robots/1/attack/2')
