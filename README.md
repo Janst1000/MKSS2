@@ -29,6 +29,14 @@ Die Nix-Shell wird durch die shell.nix erzeugt. Diese liest die requirements.txt
 
 # Starten der API
 Die API kann als einfaches Python Skript gestartet werden. Standardmäßig ist sie dann unter Port 5000 zu erreichen.
+### Windows
+Unter Windows funktioniert das ganze nur mit `python` im *Venv* und nicht mit `python3`
+```powershell
+python .\api\app.py
+```
+
+### NixOS
+Hier können wir die API mit `python3` starten.
 ```bash
 python3 api/app.py
 ```
