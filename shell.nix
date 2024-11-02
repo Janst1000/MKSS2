@@ -21,5 +21,6 @@ pkgs.mkShell {
       requirements = builtins.readFile ./requirements.txt;
     })
     pkgs.postman
+    pkgs.python3
   ];
 }
